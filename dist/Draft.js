@@ -173,8 +173,8 @@ var _extends = _assign || function (target) { for (var i = 1; i < arguments.leng
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-var BlockTree = __webpack_require__(45);
-var ContentState = __webpack_require__(25);
+var BlockTree = __webpack_require__(46);
+var ContentState = __webpack_require__(21);
 var EditorBidiService = __webpack_require__(86);
 var Immutable = __webpack_require__(0);
 var SelectionState = __webpack_require__(17);
@@ -956,13 +956,13 @@ var Immutable = __webpack_require__(0);
 
 var applyEntityToContentState = __webpack_require__(76);
 var getCharacterRemovalRange = __webpack_require__(78);
-var getContentStateFragment = __webpack_require__(24);
+var getContentStateFragment = __webpack_require__(25);
 var gkx = __webpack_require__(7);
 var insertFragmentIntoContentState = __webpack_require__(81);
 var insertTextIntoContentState = __webpack_require__(82);
 var invariant = __webpack_require__(1);
 var modifyBlockForContentState = __webpack_require__(83);
-var removeEntitiesAtEdges = __webpack_require__(42);
+var removeEntitiesAtEdges = __webpack_require__(43);
 var removeRangeFromContentState = __webpack_require__(84);
 var splitBlockInContentState = __webpack_require__(85);
 
@@ -2299,6 +2299,209 @@ module.exports = findRangesImmutable;
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
+/**
+ * Copyright (c) 2013-present, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @format
+ * 
+ */
+
+
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var BlockMapBuilder = __webpack_require__(19);
+var CharacterMetadata = __webpack_require__(4);
+var ContentBlock = __webpack_require__(13);
+var ContentBlockNode = __webpack_require__(6);
+var DraftEntity = __webpack_require__(22);
+var Immutable = __webpack_require__(0);
+var SelectionState = __webpack_require__(17);
+
+var generateRandomKey = __webpack_require__(10);
+var gkx = __webpack_require__(7);
+var sanitizeDraftText = __webpack_require__(31);
+
+var List = Immutable.List,
+    Record = Immutable.Record,
+    Repeat = Immutable.Repeat;
+
+
+var experimentalTreeDataSupport = gkx('draft_tree_data_support');
+
+var defaultRecord = {
+  entityMap: null,
+  blockMap: null,
+  selectionBefore: null,
+  selectionAfter: null
+};
+
+var ContentBlockNodeRecord = experimentalTreeDataSupport ? ContentBlockNode : ContentBlock;
+
+var ContentStateRecord = Record(defaultRecord);
+
+var ContentState = function (_ContentStateRecord) {
+  _inherits(ContentState, _ContentStateRecord);
+
+  function ContentState() {
+    _classCallCheck(this, ContentState);
+
+    return _possibleConstructorReturn(this, _ContentStateRecord.apply(this, arguments));
+  }
+
+  ContentState.prototype.getEntityMap = function getEntityMap() {
+    // TODO: update this when we fully remove DraftEntity
+    return DraftEntity;
+  };
+
+  ContentState.prototype.getBlockMap = function getBlockMap() {
+    return this.get('blockMap');
+  };
+
+  ContentState.prototype.getSelectionBefore = function getSelectionBefore() {
+    return this.get('selectionBefore');
+  };
+
+  ContentState.prototype.getSelectionAfter = function getSelectionAfter() {
+    return this.get('selectionAfter');
+  };
+
+  ContentState.prototype.getBlockForKey = function getBlockForKey(key) {
+    var block = this.getBlockMap().get(key);
+    return block;
+  };
+
+  ContentState.prototype.getKeyBefore = function getKeyBefore(key) {
+    return this.getBlockMap().reverse().keySeq().skipUntil(function (v) {
+      return v === key;
+    }).skip(1).first();
+  };
+
+  ContentState.prototype.getKeyAfter = function getKeyAfter(key) {
+    return this.getBlockMap().keySeq().skipUntil(function (v) {
+      return v === key;
+    }).skip(1).first();
+  };
+
+  ContentState.prototype.getBlockAfter = function getBlockAfter(key) {
+    return this.getBlockMap().skipUntil(function (_, k) {
+      return k === key;
+    }).skip(1).first();
+  };
+
+  ContentState.prototype.getBlockBefore = function getBlockBefore(key) {
+    return this.getBlockMap().reverse().skipUntil(function (_, k) {
+      return k === key;
+    }).skip(1).first();
+  };
+
+  ContentState.prototype.getBlocksAsArray = function getBlocksAsArray() {
+    return this.getBlockMap().toArray();
+  };
+
+  ContentState.prototype.getFirstBlock = function getFirstBlock() {
+    return this.getBlockMap().first();
+  };
+
+  ContentState.prototype.getLastBlock = function getLastBlock() {
+    return this.getBlockMap().last();
+  };
+
+  ContentState.prototype.getPlainText = function getPlainText(delimiter) {
+    return this.getBlockMap().map(function (block) {
+      return block ? block.getText() : '';
+    }).join(delimiter || '\n');
+  };
+
+  ContentState.prototype.getLastCreatedEntityKey = function getLastCreatedEntityKey() {
+    // TODO: update this when we fully remove DraftEntity
+    return DraftEntity.__getLastCreatedEntityKey();
+  };
+
+  ContentState.prototype.hasText = function hasText() {
+    var blockMap = this.getBlockMap();
+    return blockMap.size > 1 || blockMap.first().getLength() > 0;
+  };
+
+  ContentState.prototype.createEntity = function createEntity(type, mutability, data) {
+    // TODO: update this when we fully remove DraftEntity
+    DraftEntity.__create(type, mutability, data);
+    return this;
+  };
+
+  ContentState.prototype.mergeEntityData = function mergeEntityData(key, toMerge) {
+    // TODO: update this when we fully remove DraftEntity
+    DraftEntity.__mergeData(key, toMerge);
+    return this;
+  };
+
+  ContentState.prototype.replaceEntityData = function replaceEntityData(key, newData) {
+    // TODO: update this when we fully remove DraftEntity
+    DraftEntity.__replaceData(key, newData);
+    return this;
+  };
+
+  ContentState.prototype.addEntity = function addEntity(instance) {
+    // TODO: update this when we fully remove DraftEntity
+    DraftEntity.__add(instance);
+    return this;
+  };
+
+  ContentState.prototype.getEntity = function getEntity(key) {
+    // TODO: update this when we fully remove DraftEntity
+    return DraftEntity.__get(key);
+  };
+
+  ContentState.createFromBlockArray = function createFromBlockArray(
+  // TODO: update flow type when we completely deprecate the old entity API
+  blocks, entityMap) {
+    // TODO: remove this when we completely deprecate the old entity API
+    var theBlocks = Array.isArray(blocks) ? blocks : blocks.contentBlocks;
+    var blockMap = BlockMapBuilder.createFromArray(theBlocks);
+    var selectionState = blockMap.isEmpty() ? new SelectionState() : SelectionState.createEmpty(blockMap.first().getKey());
+    return new ContentState({
+      blockMap: blockMap,
+      entityMap: entityMap || DraftEntity,
+      selectionBefore: selectionState,
+      selectionAfter: selectionState
+    });
+  };
+
+  ContentState.createFromText = function createFromText(text) {
+    var delimiter = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : /\r\n?|\n/g;
+
+    var strings = text.split(delimiter);
+    var blocks = strings.map(function (block) {
+      block = sanitizeDraftText(block);
+      return new ContentBlockNodeRecord({
+        key: generateRandomKey(),
+        text: block,
+        type: 'unstyled',
+        characterList: List(Repeat(CharacterMetadata.EMPTY, block.length))
+      });
+    });
+    return ContentState.createFromBlockArray(blocks);
+  };
+
+  return ContentState;
+}(ContentStateRecord);
+
+module.exports = ContentState;
+
+/***/ }),
+/* 22 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
 
 
 var _assign = __webpack_require__(3);
@@ -2317,7 +2520,7 @@ var _extends = _assign || function (target) { for (var i = 1; i < arguments.leng
  * 
  */
 
-var DraftEntityInstance = __webpack_require__(46);
+var DraftEntityInstance = __webpack_require__(47);
 var Immutable = __webpack_require__(0);
 
 var invariant = __webpack_require__(1);
@@ -2494,7 +2697,7 @@ var DraftEntity = {
 module.exports = DraftEntity;
 
 /***/ }),
-/* 22 */
+/* 23 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -2523,7 +2726,7 @@ function isEventHandled(value) {
 module.exports = isEventHandled;
 
 /***/ }),
-/* 23 */
+/* 24 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -2571,7 +2774,7 @@ function removeTextWithStrategy(editorState, strategy, direction) {
 module.exports = removeTextWithStrategy;
 
 /***/ }),
-/* 24 */
+/* 25 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -2589,8 +2792,8 @@ module.exports = removeTextWithStrategy;
 
 
 
-var randomizeBlockMapKeys = __webpack_require__(41);
-var removeEntitiesAtEdges = __webpack_require__(42);
+var randomizeBlockMapKeys = __webpack_require__(42);
+var removeEntitiesAtEdges = __webpack_require__(43);
 
 var getContentStateFragment = function getContentStateFragment(contentState, selectionState) {
   var startKey = selectionState.getStartKey();
@@ -2638,209 +2841,6 @@ var getContentStateFragment = function getContentStateFragment(contentState, sel
 };
 
 module.exports = getContentStateFragment;
-
-/***/ }),
-/* 25 */
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-/**
- * Copyright (c) 2013-present, Facebook, Inc.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
- *
- * @format
- * 
- */
-
-
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-var BlockMapBuilder = __webpack_require__(19);
-var CharacterMetadata = __webpack_require__(4);
-var ContentBlock = __webpack_require__(13);
-var ContentBlockNode = __webpack_require__(6);
-var DraftEntity = __webpack_require__(21);
-var Immutable = __webpack_require__(0);
-var SelectionState = __webpack_require__(17);
-
-var generateRandomKey = __webpack_require__(10);
-var gkx = __webpack_require__(7);
-var sanitizeDraftText = __webpack_require__(31);
-
-var List = Immutable.List,
-    Record = Immutable.Record,
-    Repeat = Immutable.Repeat;
-
-
-var experimentalTreeDataSupport = gkx('draft_tree_data_support');
-
-var defaultRecord = {
-  entityMap: null,
-  blockMap: null,
-  selectionBefore: null,
-  selectionAfter: null
-};
-
-var ContentBlockNodeRecord = experimentalTreeDataSupport ? ContentBlockNode : ContentBlock;
-
-var ContentStateRecord = Record(defaultRecord);
-
-var ContentState = function (_ContentStateRecord) {
-  _inherits(ContentState, _ContentStateRecord);
-
-  function ContentState() {
-    _classCallCheck(this, ContentState);
-
-    return _possibleConstructorReturn(this, _ContentStateRecord.apply(this, arguments));
-  }
-
-  ContentState.prototype.getEntityMap = function getEntityMap() {
-    // TODO: update this when we fully remove DraftEntity
-    return DraftEntity;
-  };
-
-  ContentState.prototype.getBlockMap = function getBlockMap() {
-    return this.get('blockMap');
-  };
-
-  ContentState.prototype.getSelectionBefore = function getSelectionBefore() {
-    return this.get('selectionBefore');
-  };
-
-  ContentState.prototype.getSelectionAfter = function getSelectionAfter() {
-    return this.get('selectionAfter');
-  };
-
-  ContentState.prototype.getBlockForKey = function getBlockForKey(key) {
-    var block = this.getBlockMap().get(key);
-    return block;
-  };
-
-  ContentState.prototype.getKeyBefore = function getKeyBefore(key) {
-    return this.getBlockMap().reverse().keySeq().skipUntil(function (v) {
-      return v === key;
-    }).skip(1).first();
-  };
-
-  ContentState.prototype.getKeyAfter = function getKeyAfter(key) {
-    return this.getBlockMap().keySeq().skipUntil(function (v) {
-      return v === key;
-    }).skip(1).first();
-  };
-
-  ContentState.prototype.getBlockAfter = function getBlockAfter(key) {
-    return this.getBlockMap().skipUntil(function (_, k) {
-      return k === key;
-    }).skip(1).first();
-  };
-
-  ContentState.prototype.getBlockBefore = function getBlockBefore(key) {
-    return this.getBlockMap().reverse().skipUntil(function (_, k) {
-      return k === key;
-    }).skip(1).first();
-  };
-
-  ContentState.prototype.getBlocksAsArray = function getBlocksAsArray() {
-    return this.getBlockMap().toArray();
-  };
-
-  ContentState.prototype.getFirstBlock = function getFirstBlock() {
-    return this.getBlockMap().first();
-  };
-
-  ContentState.prototype.getLastBlock = function getLastBlock() {
-    return this.getBlockMap().last();
-  };
-
-  ContentState.prototype.getPlainText = function getPlainText(delimiter) {
-    return this.getBlockMap().map(function (block) {
-      return block ? block.getText() : '';
-    }).join(delimiter || '\n');
-  };
-
-  ContentState.prototype.getLastCreatedEntityKey = function getLastCreatedEntityKey() {
-    // TODO: update this when we fully remove DraftEntity
-    return DraftEntity.__getLastCreatedEntityKey();
-  };
-
-  ContentState.prototype.hasText = function hasText() {
-    var blockMap = this.getBlockMap();
-    return blockMap.size > 1 || blockMap.first().getLength() > 0;
-  };
-
-  ContentState.prototype.createEntity = function createEntity(type, mutability, data) {
-    // TODO: update this when we fully remove DraftEntity
-    DraftEntity.__create(type, mutability, data);
-    return this;
-  };
-
-  ContentState.prototype.mergeEntityData = function mergeEntityData(key, toMerge) {
-    // TODO: update this when we fully remove DraftEntity
-    DraftEntity.__mergeData(key, toMerge);
-    return this;
-  };
-
-  ContentState.prototype.replaceEntityData = function replaceEntityData(key, newData) {
-    // TODO: update this when we fully remove DraftEntity
-    DraftEntity.__replaceData(key, newData);
-    return this;
-  };
-
-  ContentState.prototype.addEntity = function addEntity(instance) {
-    // TODO: update this when we fully remove DraftEntity
-    DraftEntity.__add(instance);
-    return this;
-  };
-
-  ContentState.prototype.getEntity = function getEntity(key) {
-    // TODO: update this when we fully remove DraftEntity
-    return DraftEntity.__get(key);
-  };
-
-  ContentState.createFromBlockArray = function createFromBlockArray(
-  // TODO: update flow type when we completely deprecate the old entity API
-  blocks, entityMap) {
-    // TODO: remove this when we completely deprecate the old entity API
-    var theBlocks = Array.isArray(blocks) ? blocks : blocks.contentBlocks;
-    var blockMap = BlockMapBuilder.createFromArray(theBlocks);
-    var selectionState = blockMap.isEmpty() ? new SelectionState() : SelectionState.createEmpty(blockMap.first().getKey());
-    return new ContentState({
-      blockMap: blockMap,
-      entityMap: entityMap || DraftEntity,
-      selectionBefore: selectionState,
-      selectionAfter: selectionState
-    });
-  };
-
-  ContentState.createFromText = function createFromText(text) {
-    var delimiter = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : /\r\n?|\n/g;
-
-    var strings = text.split(delimiter);
-    var blocks = strings.map(function (block) {
-      block = sanitizeDraftText(block);
-      return new ContentBlockNodeRecord({
-        key: generateRandomKey(),
-        text: block,
-        type: 'unstyled',
-        characterList: List(Repeat(CharacterMetadata.EMPTY, block.length))
-      });
-    });
-    return ContentState.createFromBlockArray(blocks);
-  };
-
-  return ContentState;
-}(ContentStateRecord);
-
-module.exports = ContentState;
 
 /***/ }),
 /* 26 */
@@ -3499,7 +3499,7 @@ module.exports = getEntityKeyForSelection;
 
 
 
-var getSelectionOffsetKeyForNode = __webpack_require__(50);
+var getSelectionOffsetKeyForNode = __webpack_require__(51);
 
 /**
  * Get the key from the node's nearest offset-aware ancestor.
@@ -3669,6 +3669,151 @@ module.exports = Scroll;
 
 
 
+var _assign = __webpack_require__(3);
+
+var _extends = _assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+var ContentBlock = __webpack_require__(13);
+var ContentBlockNode = __webpack_require__(6);
+var DraftStringKey = __webpack_require__(61);
+
+var encodeEntityRanges = __webpack_require__(126);
+var encodeInlineStyleRanges = __webpack_require__(127);
+var invariant = __webpack_require__(1);
+
+var createRawBlock = function createRawBlock(block, entityStorageMap) {
+  return {
+    key: block.getKey(),
+    text: block.getText(),
+    type: block.getType(),
+    depth: block.getDepth(),
+    inlineStyleRanges: encodeInlineStyleRanges(block),
+    entityRanges: encodeEntityRanges(block, entityStorageMap),
+    data: block.getData().toObject()
+  };
+};
+
+var insertRawBlock = function insertRawBlock(block, entityMap, rawBlocks, blockCacheRef) {
+  if (block instanceof ContentBlock) {
+    rawBlocks.push(createRawBlock(block, entityMap));
+    return;
+  }
+
+  !(block instanceof ContentBlockNode) ?  true ? invariant(false, 'block is not a BlockNode') : invariant(false) : void 0;
+
+  var parentKey = block.getParentKey();
+  var rawBlock = blockCacheRef[block.getKey()] = _extends({}, createRawBlock(block, entityMap), {
+    children: []
+  });
+
+  if (parentKey) {
+    blockCacheRef[parentKey].children.push(rawBlock);
+    return;
+  }
+
+  rawBlocks.push(rawBlock);
+};
+
+var encodeRawBlocks = function encodeRawBlocks(contentState, rawState) {
+  var entityMap = rawState.entityMap;
+
+
+  var rawBlocks = [];
+
+  var blockCacheRef = {};
+  var entityCacheRef = {};
+  var entityStorageKey = 0;
+
+  contentState.getBlockMap().forEach(function (block) {
+    block.findEntityRanges(function (character) {
+      return character.getEntity() !== null;
+    }, function (start) {
+      var entityKey = block.getEntityAt(start);
+      // Stringify to maintain order of otherwise numeric keys.
+      var stringifiedEntityKey = DraftStringKey.stringify(entityKey);
+      // This makes this function resilient to two entities
+      // erroneously having the same key
+      if (entityCacheRef[stringifiedEntityKey]) {
+        return;
+      }
+      entityCacheRef[stringifiedEntityKey] = entityKey;
+      // we need the `any` casting here since this is a temporary state
+      // where we will later on flip the entity map and populate it with
+      // real entity, at this stage we just need to map back the entity
+      // key used by the BlockNode
+      entityMap[stringifiedEntityKey] = '' + entityStorageKey;
+      entityStorageKey++;
+    });
+
+    insertRawBlock(block, entityMap, rawBlocks, blockCacheRef);
+  });
+
+  return {
+    blocks: rawBlocks,
+    entityMap: entityMap
+  };
+};
+
+// Flip storage map so that our storage keys map to global
+// DraftEntity keys.
+var encodeRawEntityMap = function encodeRawEntityMap(contentState, rawState) {
+  var blocks = rawState.blocks,
+      entityMap = rawState.entityMap;
+
+
+  var rawEntityMap = {};
+
+  Object.keys(entityMap).forEach(function (key, index) {
+    var entity = contentState.getEntity(DraftStringKey.unstringify(key));
+    rawEntityMap[index] = {
+      type: entity.getType(),
+      mutability: entity.getMutability(),
+      data: entity.getData()
+    };
+  });
+
+  return {
+    blocks: blocks,
+    entityMap: rawEntityMap
+  };
+};
+
+var convertFromDraftStateToRaw = function convertFromDraftStateToRaw(contentState) {
+  var rawDraftContentState = {
+    entityMap: {},
+    blocks: []
+  };
+
+  // add blocks
+  rawDraftContentState = encodeRawBlocks(contentState, rawDraftContentState);
+
+  // add entities
+  rawDraftContentState = encodeRawEntityMap(contentState, rawDraftContentState);
+
+  return rawDraftContentState;
+};
+
+module.exports = convertFromDraftStateToRaw;
+
+/***/ }),
+/* 39 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+/**
+ * Copyright (c) 2013-present, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @format
+ * 
+ */
+
+
+
 var UserAgent = __webpack_require__(11);
 
 var isOSX = UserAgent.isPlatform('Mac OS X');
@@ -3695,7 +3840,7 @@ var KeyBindingUtil = {
 module.exports = KeyBindingUtil;
 
 /***/ }),
-/* 39 */
+/* 40 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -3753,7 +3898,7 @@ function moveSelectionBackward(editorState, maxDistance) {
 module.exports = moveSelectionBackward;
 
 /***/ }),
-/* 40 */
+/* 41 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -3797,7 +3942,7 @@ function getSafeBodyFromHTML(html) {
 module.exports = getSafeBodyFromHTML;
 
 /***/ }),
-/* 41 */
+/* 42 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -3915,7 +4060,7 @@ var randomizeBlockMapKeys = function randomizeBlockMapKeys(blockMap) {
 module.exports = randomizeBlockMapKeys;
 
 /***/ }),
-/* 42 */
+/* 43 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4039,7 +4184,7 @@ function removeForBlock(entityMap, block, offset) {
 module.exports = removeEntitiesAtEdges;
 
 /***/ }),
-/* 43 */
+/* 44 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4080,7 +4225,7 @@ function insertIntoList(targetList, toInsert, offset) {
 module.exports = insertIntoList;
 
 /***/ }),
-/* 44 */
+/* 45 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4138,7 +4283,7 @@ var getNextDelimiterBlockKey = function getNextDelimiterBlockKey(block, blockMap
 module.exports = getNextDelimiterBlockKey;
 
 /***/ }),
-/* 45 */
+/* 46 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4256,7 +4401,7 @@ function areEqual(a, b) {
 module.exports = BlockTree;
 
 /***/ }),
-/* 46 */
+/* 47 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4331,7 +4476,7 @@ var DraftEntityInstance = function (_DraftEntityInstanceR) {
 module.exports = DraftEntityInstance;
 
 /***/ }),
-/* 47 */
+/* 48 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4373,7 +4518,7 @@ module.exports = {
 };
 
 /***/ }),
-/* 48 */
+/* 49 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4426,7 +4571,7 @@ function isSelectionAtLeafStart(editorState) {
 module.exports = isSelectionAtLeafStart;
 
 /***/ }),
-/* 49 */
+/* 50 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4606,7 +4751,7 @@ module.exports = editOnInput;
 /* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(12)))
 
 /***/ }),
-/* 50 */
+/* 51 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4648,7 +4793,7 @@ function getSelectionOffsetKeyForNode(node) {
 module.exports = getSelectionOffsetKeyForNode;
 
 /***/ }),
-/* 51 */
+/* 52 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4824,7 +4969,7 @@ var DraftEditorLeaf = function (_React$Component) {
 module.exports = DraftEditorLeaf;
 
 /***/ }),
-/* 52 */
+/* 53 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4850,7 +4995,7 @@ module.exports = {
 };
 
 /***/ }),
-/* 53 */
+/* 54 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4892,7 +5037,7 @@ function getActiveElement(doc) /*?DOMElement*/{
 module.exports = getActiveElement;
 
 /***/ }),
-/* 54 */
+/* 55 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4929,7 +5074,7 @@ function getElementPosition(element) {
 module.exports = getElementPosition;
 
 /***/ }),
-/* 55 */
+/* 56 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -4992,7 +5137,7 @@ getViewportDimensions.withoutScrollbars = function () {
 module.exports = getViewportDimensions;
 
 /***/ }),
-/* 56 */
+/* 57 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -5020,7 +5165,7 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
-var DraftEditorLeaf = __webpack_require__(51);
+var DraftEditorLeaf = __webpack_require__(52);
 var DraftOffsetKey = __webpack_require__(15);
 var React = __webpack_require__(9);
 var ReactDOM = __webpack_require__(18);
@@ -5030,9 +5175,9 @@ var UnicodeBidi = __webpack_require__(32);
 var UnicodeBidiDirection = __webpack_require__(26);
 
 var cx = __webpack_require__(14);
-var getElementPosition = __webpack_require__(54);
+var getElementPosition = __webpack_require__(55);
 var getScrollPosition = __webpack_require__(29);
-var getViewportDimensions = __webpack_require__(55);
+var getViewportDimensions = __webpack_require__(56);
 var invariant = __webpack_require__(1);
 var nullthrows = __webpack_require__(8);
 
@@ -5212,7 +5357,7 @@ var DraftEditorBlock = function (_React$Component) {
 module.exports = DraftEditorBlock;
 
 /***/ }),
-/* 57 */
+/* 58 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -5437,7 +5582,7 @@ var DataTransfer = function () {
 module.exports = DataTransfer;
 
 /***/ }),
-/* 58 */
+/* 59 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -5523,7 +5668,7 @@ module.exports = getTextContentFromFiles;
 /* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(12)))
 
 /***/ }),
-/* 59 */
+/* 60 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -5604,151 +5749,6 @@ function getUpdatedSelectionState(editorState, anchorKey, anchorOffset, focusKey
 module.exports = getUpdatedSelectionState;
 
 /***/ }),
-/* 60 */
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-/**
- * Copyright (c) 2013-present, Facebook, Inc.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
- *
- * @format
- * 
- */
-
-
-
-var _assign = __webpack_require__(3);
-
-var _extends = _assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-var ContentBlock = __webpack_require__(13);
-var ContentBlockNode = __webpack_require__(6);
-var DraftStringKey = __webpack_require__(61);
-
-var encodeEntityRanges = __webpack_require__(126);
-var encodeInlineStyleRanges = __webpack_require__(127);
-var invariant = __webpack_require__(1);
-
-var createRawBlock = function createRawBlock(block, entityStorageMap) {
-  return {
-    key: block.getKey(),
-    text: block.getText(),
-    type: block.getType(),
-    depth: block.getDepth(),
-    inlineStyleRanges: encodeInlineStyleRanges(block),
-    entityRanges: encodeEntityRanges(block, entityStorageMap),
-    data: block.getData().toObject()
-  };
-};
-
-var insertRawBlock = function insertRawBlock(block, entityMap, rawBlocks, blockCacheRef) {
-  if (block instanceof ContentBlock) {
-    rawBlocks.push(createRawBlock(block, entityMap));
-    return;
-  }
-
-  !(block instanceof ContentBlockNode) ?  true ? invariant(false, 'block is not a BlockNode') : invariant(false) : void 0;
-
-  var parentKey = block.getParentKey();
-  var rawBlock = blockCacheRef[block.getKey()] = _extends({}, createRawBlock(block, entityMap), {
-    children: []
-  });
-
-  if (parentKey) {
-    blockCacheRef[parentKey].children.push(rawBlock);
-    return;
-  }
-
-  rawBlocks.push(rawBlock);
-};
-
-var encodeRawBlocks = function encodeRawBlocks(contentState, rawState) {
-  var entityMap = rawState.entityMap;
-
-
-  var rawBlocks = [];
-
-  var blockCacheRef = {};
-  var entityCacheRef = {};
-  var entityStorageKey = 0;
-
-  contentState.getBlockMap().forEach(function (block) {
-    block.findEntityRanges(function (character) {
-      return character.getEntity() !== null;
-    }, function (start) {
-      var entityKey = block.getEntityAt(start);
-      // Stringify to maintain order of otherwise numeric keys.
-      var stringifiedEntityKey = DraftStringKey.stringify(entityKey);
-      // This makes this function resilient to two entities
-      // erroneously having the same key
-      if (entityCacheRef[stringifiedEntityKey]) {
-        return;
-      }
-      entityCacheRef[stringifiedEntityKey] = entityKey;
-      // we need the `any` casting here since this is a temporary state
-      // where we will later on flip the entity map and populate it with
-      // real entity, at this stage we just need to map back the entity
-      // key used by the BlockNode
-      entityMap[stringifiedEntityKey] = '' + entityStorageKey;
-      entityStorageKey++;
-    });
-
-    insertRawBlock(block, entityMap, rawBlocks, blockCacheRef);
-  });
-
-  return {
-    blocks: rawBlocks,
-    entityMap: entityMap
-  };
-};
-
-// Flip storage map so that our storage keys map to global
-// DraftEntity keys.
-var encodeRawEntityMap = function encodeRawEntityMap(contentState, rawState) {
-  var blocks = rawState.blocks,
-      entityMap = rawState.entityMap;
-
-
-  var rawEntityMap = {};
-
-  Object.keys(entityMap).forEach(function (key, index) {
-    var entity = contentState.getEntity(DraftStringKey.unstringify(key));
-    rawEntityMap[index] = {
-      type: entity.getType(),
-      mutability: entity.getMutability(),
-      data: entity.getData()
-    };
-  });
-
-  return {
-    blocks: blocks,
-    entityMap: rawEntityMap
-  };
-};
-
-var convertFromDraftStateToRaw = function convertFromDraftStateToRaw(contentState) {
-  var rawDraftContentState = {
-    entityMap: {},
-    blocks: []
-  };
-
-  // add blocks
-  rawDraftContentState = encodeRawBlocks(contentState, rawDraftContentState);
-
-  // add entities
-  rawDraftContentState = encodeRawEntityMap(contentState, rawDraftContentState);
-
-  return rawDraftContentState;
-};
-
-module.exports = convertFromDraftStateToRaw;
-
-/***/ }),
 /* 61 */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -5798,7 +5798,7 @@ module.exports = DraftStringKey;
 
 
 
-var getContentStateFragment = __webpack_require__(24);
+var getContentStateFragment = __webpack_require__(25);
 
 function getFragmentFromSelection(editorState) {
   var selectionState = editorState.getSelection();
@@ -5900,8 +5900,8 @@ module.exports = getRangeClientRects;
 
 
 var findAncestorOffsetKey = __webpack_require__(35);
-var getSelectionOffsetKeyForNode = __webpack_require__(50);
-var getUpdatedSelectionState = __webpack_require__(59);
+var getSelectionOffsetKeyForNode = __webpack_require__(51);
+var getUpdatedSelectionState = __webpack_require__(60);
 var invariant = __webpack_require__(1);
 var nullthrows = __webpack_require__(8);
 
@@ -6204,7 +6204,7 @@ var CharacterMetadata = __webpack_require__(4);
 var ContentBlock = __webpack_require__(13);
 var ContentBlockNode = __webpack_require__(6);
 var DefaultDraftBlockRenderMap = __webpack_require__(27);
-var DraftEntity = __webpack_require__(21);
+var DraftEntity = __webpack_require__(22);
 var Immutable = __webpack_require__(0);
 
 var _require = __webpack_require__(0),
@@ -6214,7 +6214,7 @@ var URI = __webpack_require__(68);
 
 var cx = __webpack_require__(14);
 var generateRandomKey = __webpack_require__(10);
-var getSafeBodyFromHTML = __webpack_require__(40);
+var getSafeBodyFromHTML = __webpack_require__(41);
 var gkx = __webpack_require__(7);
 var invariant = __webpack_require__(1);
 var sanitizeDraftText = __webpack_require__(31);
@@ -6897,7 +6897,7 @@ var CharacterMetadata = __webpack_require__(4);
 var ContentBlock = __webpack_require__(13);
 var ContentBlockNode = __webpack_require__(6);
 var DefaultDraftBlockRenderMap = __webpack_require__(27);
-var DraftEntity = __webpack_require__(21);
+var DraftEntity = __webpack_require__(22);
 
 var _require = __webpack_require__(0),
     List = _require.List,
@@ -6908,7 +6908,7 @@ var URI = __webpack_require__(68);
 
 var cx = __webpack_require__(14);
 var generateRandomKey = __webpack_require__(10);
-var getSafeBodyFromHTML = __webpack_require__(40);
+var getSafeBodyFromHTML = __webpack_require__(41);
 var gkx = __webpack_require__(7);
 
 var experimentalTreeDataSupport = gkx('draft_tree_data_support');
@@ -7606,8 +7606,8 @@ var _extends = _assign || function (target) { for (var i = 1; i < arguments.leng
 
 var ContentBlock = __webpack_require__(13);
 var ContentBlockNode = __webpack_require__(6);
-var ContentState = __webpack_require__(25);
-var DraftEntity = __webpack_require__(21);
+var ContentState = __webpack_require__(21);
+var DraftEntity = __webpack_require__(22);
 var DraftTreeAdapter = __webpack_require__(148);
 var Immutable = __webpack_require__(0);
 var SelectionState = __webpack_require__(17);
@@ -8128,7 +8128,7 @@ module.exports = RichTextEditorUtil;
 
 
 
-var KeyBindingUtil = __webpack_require__(38);
+var KeyBindingUtil = __webpack_require__(39);
 var Keys = __webpack_require__(33);
 var UserAgent = __webpack_require__(11);
 
@@ -8261,20 +8261,20 @@ var BlockMapBuilder = __webpack_require__(19);
 var CharacterMetadata = __webpack_require__(4);
 var CompositeDraftDecorator = __webpack_require__(89);
 var ContentBlock = __webpack_require__(13);
-var ContentState = __webpack_require__(25);
+var ContentState = __webpack_require__(21);
 var DefaultDraftBlockRenderMap = __webpack_require__(27);
-var DefaultDraftInlineStyle = __webpack_require__(47);
+var DefaultDraftInlineStyle = __webpack_require__(48);
 var DraftEditor = __webpack_require__(90);
-var DraftEditorBlock = __webpack_require__(56);
-var DraftEntity = __webpack_require__(21);
+var DraftEditorBlock = __webpack_require__(57);
+var DraftEntity = __webpack_require__(22);
 var DraftModifier = __webpack_require__(5);
-var DraftEntityInstance = __webpack_require__(46);
+var DraftEntityInstance = __webpack_require__(47);
 var EditorState = __webpack_require__(2);
-var KeyBindingUtil = __webpack_require__(38);
+var KeyBindingUtil = __webpack_require__(39);
 var RichTextEditorUtil = __webpack_require__(71);
 var SelectionState = __webpack_require__(17);
 
-var convertFromDraftStateToRaw = __webpack_require__(60);
+var convertFromDraftStateToRaw = __webpack_require__(38);
 var convertFromRawToDraftState = __webpack_require__(70);
 var generateRandomKey = __webpack_require__(10);
 var getDefaultKeyBinding = __webpack_require__(72);
@@ -8899,9 +8899,9 @@ var BlockMapBuilder = __webpack_require__(19);
 var ContentBlockNode = __webpack_require__(6);
 var Immutable = __webpack_require__(0);
 
-var insertIntoList = __webpack_require__(43);
+var insertIntoList = __webpack_require__(44);
 var invariant = __webpack_require__(1);
-var randomizeBlockMapKeys = __webpack_require__(41);
+var randomizeBlockMapKeys = __webpack_require__(42);
 
 var List = Immutable.List;
 
@@ -9153,7 +9153,7 @@ module.exports = insertFragmentIntoContentState;
 
 var Immutable = __webpack_require__(0);
 
-var insertIntoList = __webpack_require__(43);
+var insertIntoList = __webpack_require__(44);
 var invariant = __webpack_require__(1);
 
 var Repeat = Immutable.Repeat;
@@ -9256,7 +9256,7 @@ module.exports = modifyBlockForContentState;
 var ContentBlockNode = __webpack_require__(6);
 var Immutable = __webpack_require__(0);
 
-var getNextDelimiterBlockKey = __webpack_require__(44);
+var getNextDelimiterBlockKey = __webpack_require__(45);
 
 var List = Immutable.List,
     Map = Immutable.Map;
@@ -9860,7 +9860,7 @@ module.exports = UnicodeBidiService;
 var ContentBlockNode = __webpack_require__(6);
 var Immutable = __webpack_require__(0);
 
-var getNextDelimiterBlockKey = __webpack_require__(44);
+var getNextDelimiterBlockKey = __webpack_require__(45);
 var invariant = __webpack_require__(1);
 
 var OrderedMap = Immutable.OrderedMap,
@@ -10186,7 +10186,7 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
 var DefaultDraftBlockRenderMap = __webpack_require__(27);
-var DefaultDraftInlineStyle = __webpack_require__(47);
+var DefaultDraftInlineStyle = __webpack_require__(48);
 var DraftEditorCompositionHandler = __webpack_require__(91);
 var DraftEditorContents = __webpack_require__(98);
 var DraftEditorDragHandler = __webpack_require__(115);
@@ -10760,9 +10760,9 @@ var Keys = __webpack_require__(33);
 
 var getEntityKeyForSelection = __webpack_require__(34);
 var gkx = __webpack_require__(7);
-var isEventHandled = __webpack_require__(22);
-var isSelectionAtLeafStart = __webpack_require__(48);
-var onInput = __webpack_require__(49);
+var isEventHandled = __webpack_require__(23);
+var isSelectionAtLeafStart = __webpack_require__(49);
+var onInput = __webpack_require__(50);
 
 /**
  * Millisecond delay to allow `compositionstart` to fire again upon
@@ -11081,13 +11081,13 @@ module.exports = uaData;
 /* 93 */
 /***/ (function(module, exports, __webpack_require__) {
 
-var __WEBPACK_AMD_DEFINE_RESULT__;/**
- * UAParser.js v0.7.17
+var __WEBPACK_AMD_DEFINE_RESULT__;/*!
+ * UAParser.js v0.7.19
  * Lightweight JavaScript-based User-Agent string parser
  * https://github.com/faisalman/ua-parser-js
  *
  * Copyright © 2012-2016 Faisal Salman <fyzlman@gmail.com>
- * Dual licensed under GPLv2 & MIT
+ * Dual licensed under GPLv2 or MIT
  */
 
 (function (window, undefined) {
@@ -11099,7 +11099,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
     /////////////
 
 
-    var LIBVERSION  = '0.7.17',
+    var LIBVERSION  = '0.7.19',
         EMPTY       = '',
         UNKNOWN     = '?',
         FUNC_TYPE   = 'function',
@@ -11327,7 +11327,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
 
             // Mixed
             /(kindle)\/([\w\.]+)/i,                                             // Kindle
-            /(lunascape|maxthon|netfront|jasmine|blazer)[\/\s]?([\w\.]+)*/i,
+            /(lunascape|maxthon|netfront|jasmine|blazer)[\/\s]?([\w\.]*)/i,
                                                                                 // Lunascape/Maxthon/Netfront/Jasmine/Blazer
 
             // Trident based
@@ -11336,16 +11336,16 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(?:ms|\()(ie)\s([\w\.]+)/i,                                        // Internet Explorer
 
             // Webkit/KHTML based
-            /(rekonq)\/([\w\.]+)*/i,                                            // Rekonq
-            /(chromium|flock|rockmelt|midori|epiphany|silk|skyfire|ovibrowser|bolt|iron|vivaldi|iridium|phantomjs|bowser)\/([\w\.-]+)/i
+            /(rekonq)\/([\w\.]*)/i,                                             // Rekonq
+            /(chromium|flock|rockmelt|midori|epiphany|silk|skyfire|ovibrowser|bolt|iron|vivaldi|iridium|phantomjs|bowser|quark)\/([\w\.-]+)/i
                                                                                 // Chromium/Flock/RockMelt/Midori/Epiphany/Silk/Skyfire/Bolt/Iron/Iridium/PhantomJS/Bowser
             ], [NAME, VERSION], [
 
             /(trident).+rv[:\s]([\w\.]+).+like\sgecko/i                         // IE11
             ], [[NAME, 'IE'], VERSION], [
 
-            /(edge)\/((\d+)?[\w\.]+)/i                                          // Microsoft Edge
-            ], [NAME, VERSION], [
+            /(edge|edgios|edga)\/((\d+)?[\w\.]+)/i                              // Microsoft Edge
+            ], [[NAME, 'Edge'], VERSION], [
 
             /(yabrowser)\/([\w\.]+)/i                                           // Yandex
             ], [[NAME, 'Yandex'], VERSION], [
@@ -11353,8 +11353,13 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(puffin)\/([\w\.]+)/i                                              // Puffin
             ], [[NAME, 'Puffin'], VERSION], [
 
-            /((?:[\s\/])uc?\s?browser|(?:juc.+)ucweb)[\/\s]?([\w\.]+)/i
-                                                                                // UCBrowser
+            /(focus)\/([\w\.]+)/i                                               // Firefox Focus
+            ], [[NAME, 'Firefox Focus'], VERSION], [
+
+            /(opt)\/([\w\.]+)/i                                                 // Opera Touch
+            ], [[NAME, 'Opera Touch'], VERSION], [
+
+            /((?:[\s\/])uc?\s?browser|(?:juc.+)ucweb)[\/\s]?([\w\.]+)/i         // UCBrowser
             ], [[NAME, 'UCBrowser'], VERSION], [
 
             /(comodo_dragon)\/([\w\.]+)/i                                       // Comodo Dragon
@@ -11363,17 +11368,39 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(micromessenger)\/([\w\.]+)/i                                      // WeChat
             ], [[NAME, 'WeChat'], VERSION], [
 
+            /(brave)\/([\w\.]+)/i                                              // Brave browser
+            ], [[NAME, 'Brave'], VERSION], [
+
+            /(qqbrowserlite)\/([\w\.]+)/i                                       // QQBrowserLite
+            ], [NAME, VERSION], [
+
             /(QQ)\/([\d\.]+)/i                                                  // QQ, aka ShouQ
             ], [NAME, VERSION], [
 
             /m?(qqbrowser)[\/\s]?([\w\.]+)/i                                    // QQBrowser
             ], [NAME, VERSION], [
 
+            /(BIDUBrowser)[\/\s]?([\w\.]+)/i                                    // Baidu Browser
+            ], [NAME, VERSION], [
+
+            /(2345Explorer)[\/\s]?([\w\.]+)/i                                   // 2345 Browser
+            ], [NAME, VERSION], [
+
+            /(MetaSr)[\/\s]?([\w\.]+)/i                                         // SouGouBrowser
+            ], [NAME], [
+
+            /(LBBROWSER)/i                                      // LieBao Browser
+            ], [NAME], [
+
             /xiaomi\/miuibrowser\/([\w\.]+)/i                                   // MIUI Browser
             ], [VERSION, [NAME, 'MIUI Browser']], [
 
             /;fbav\/([\w\.]+);/i                                                // Facebook App for iOS & Android
             ], [VERSION, [NAME, 'Facebook']], [
+
+            /safari\s(line)\/([\w\.]+)/i,                                       // Line App for iOS
+            /android.+(line)\/([\w\.]+)\/iab/i                                  // Line App for Android
+            ], [NAME, VERSION], [
 
             /headlesschrome(?:\/([\w\.]+)|\s)/i                                 // Chrome Headless
             ], [VERSION, [NAME, 'Chrome Headless']], [
@@ -11425,7 +11452,8 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(swiftfox)/i,                                                      // Swiftfox
             /(icedragon|iceweasel|camino|chimera|fennec|maemo\sbrowser|minimo|conkeror)[\/\s]?([\w\.\+]+)/i,
                                                                                 // IceDragon/Iceweasel/Camino/Chimera/Fennec/Maemo/Minimo/Conkeror
-            /(firefox|seamonkey|k-meleon|icecat|iceape|firebird|phoenix)\/([\w\.-]+)/i,
+            /(firefox|seamonkey|k-meleon|icecat|iceape|firebird|phoenix|palemoon|basilisk|waterfox)\/([\w\.-]+)$/i,
+
                                                                                 // Firefox/SeaMonkey/K-Meleon/IceCat/IceApe/Firebird/Phoenix
             /(mozilla)\/([\w\.]+).+rv\:.+gecko\/\d+/i,                          // Mozilla
 
@@ -11433,7 +11461,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(polaris|lynx|dillo|icab|doris|amaya|w3m|netsurf|sleipnir)[\/\s]?([\w\.]+)/i,
                                                                                 // Polaris/Lynx/Dillo/iCab/Doris/Amaya/w3m/NetSurf/Sleipnir
             /(links)\s\(([\w\.]+)/i,                                            // Links
-            /(gobrowser)\/?([\w\.]+)*/i,                                        // GoBrowser
+            /(gobrowser)\/?([\w\.]*)/i,                                         // GoBrowser
             /(ice\s?browser)\/v?([\w\._]+)/i,                                   // ICE Browser
             /(mosaic)[\/\s]([\w\.]+)/i                                          // Mosaic
             ], [NAME, VERSION]
@@ -11571,7 +11599,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(sun4\w)[;\)]/i                                                    // SPARC
             ], [[ARCHITECTURE, 'sparc']], [
 
-            /((?:avr32|ia64(?=;))|68k(?=\))|arm(?:64|(?=v\d+;))|(?=atmel\s)avr|(?:irix|mips|sparc)(?:64)?(?=;)|pa-risc)/i
+            /((?:avr32|ia64(?=;))|68k(?=\))|arm(?:64|(?=v\d+[;l]))|(?=atmel\s)avr|(?:irix|mips|sparc)(?:64)?(?=;)|pa-risc)/i
                                                                                 // IA64, 68K, ARM/64, AVR/32, IRIX/64, MIPS/64, SPARC/64, PA-RISC
             ], [[ARCHITECTURE, util.lowerize]]
         ],
@@ -11595,10 +11623,12 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(dell)\s(strea[kpr\s\d]*[\dko])/i                                  // Dell Streak
             ], [VENDOR, MODEL, [TYPE, TABLET]], [
 
-            /(kf[A-z]+)\sbuild\/[\w\.]+.*silk\//i                               // Kindle Fire HD
+            /(kf[A-z]+)\sbuild\/.+silk\//i                                      // Kindle Fire HD
             ], [MODEL, [VENDOR, 'Amazon'], [TYPE, TABLET]], [
-            /(sd|kf)[0349hijorstuw]+\sbuild\/[\w\.]+.*silk\//i                  // Fire Phone
+            /(sd|kf)[0349hijorstuw]+\sbuild\/.+silk\//i                         // Fire Phone
             ], [[MODEL, mapper.str, maps.device.amazon.model], [VENDOR, 'Amazon'], [TYPE, MOBILE]], [
+            /android.+aft([bms])\sbuild/i                                       // Fire TV
+            ], [MODEL, [VENDOR, 'Amazon'], [TYPE, SMARTTV]], [
 
             /\((ip[honed|\s\w*]+);.+(apple)/i                                   // iPod/iPhone
             ], [MODEL, VENDOR, [TYPE, MOBILE]], [
@@ -11606,7 +11636,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             ], [MODEL, [VENDOR, 'Apple'], [TYPE, MOBILE]], [
 
             /(blackberry)[\s-]?(\w+)/i,                                         // BlackBerry
-            /(blackberry|benq|palm(?=\-)|sonyericsson|acer|asus|dell|meizu|motorola|polytron)[\s_-]?([\w-]+)*/i,
+            /(blackberry|benq|palm(?=\-)|sonyericsson|acer|asus|dell|meizu|motorola|polytron)[\s_-]?([\w-]*)/i,
                                                                                 // BenQ/Palm/Sony-Ericsson/Acer/Asus/Dell/Meizu/Motorola/Polytron
             /(hp)\s([\w\s]+\w)/i,                                               // HP iPAQ
             /(asus)-?(\w+)/i                                                    // Asus
@@ -11640,8 +11670,8 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             ], [VENDOR, MODEL, [TYPE, TABLET]], [
 
             /(htc)[;_\s-]+([\w\s]+(?=\))|\w+)*/i,                               // HTC
-            /(zte)-(\w+)*/i,                                                    // ZTE
-            /(alcatel|geeksphone|lenovo|nexian|panasonic|(?=;\s)sony)[_\s-]?([\w-]+)*/i
+            /(zte)-(\w*)/i,                                                     // ZTE
+            /(alcatel|geeksphone|lenovo|nexian|panasonic|(?=;\s)sony)[_\s-]?([\w-]*)/i
                                                                                 // Alcatel/GeeksPhone/Lenovo/Nexian/Panasonic/Sony
             ], [VENDOR, [MODEL, /_/g, ' '], [TYPE, MOBILE]], [
 
@@ -11661,8 +11691,8 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             ], [[MODEL, /\./g, ' '], [VENDOR, 'Microsoft'], [TYPE, MOBILE]], [
 
                                                                                 // Motorola
-            /\s(milestone|droid(?:[2-4x]|\s(?:bionic|x2|pro|razr))?(:?\s4g)?)[\w\s]+build\//i,
-            /mot[\s-]?(\w+)*/i,
+            /\s(milestone|droid(?:[2-4x]|\s(?:bionic|x2|pro|razr))?:?(\s4g)?)[\w\s]+build\//i,
+            /mot[\s-]?(\w*)/i,
             /(XT\d{3,4}) build\//i,
             /(nexus\s6)/i
             ], [MODEL, [VENDOR, 'Motorola'], [TYPE, MOBILE]], [
@@ -11684,15 +11714,15 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /smart-tv.+(samsung)/i
             ], [VENDOR, [TYPE, SMARTTV], MODEL], [
             /((s[cgp]h-\w+|gt-\w+|galaxy\snexus|sm-\w[\w\d]+))/i,
-            /(sam[sung]*)[\s-]*(\w+-?[\w-]*)*/i,
+            /(sam[sung]*)[\s-]*(\w+-?[\w-]*)/i,
             /sec-((sgh\w+))/i
             ], [[VENDOR, 'Samsung'], MODEL, [TYPE, MOBILE]], [
 
-            /sie-(\w+)*/i                                                       // Siemens
+            /sie-(\w*)/i                                                        // Siemens
             ], [MODEL, [VENDOR, 'Siemens'], [TYPE, MOBILE]], [
 
             /(maemo|nokia).*(n900|lumia\s\d+)/i,                                // Nokia
-            /(nokia)[\s_-]?([\w-]+)*/i
+            /(nokia)[\s_-]?([\w-]*)/i
             ], [[VENDOR, 'Nokia'], MODEL, [TYPE, MOBILE]], [
 
             /android\s3\.[\s\w;-]{10}(a\d{3})/i                                 // Acer
@@ -11705,7 +11735,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(lg) netcast\.tv/i                                                 // LG SmartTV
             ], [VENDOR, MODEL, [TYPE, SMARTTV]], [
             /(nexus\s[45])/i,                                                   // LG
-            /lg[e;\s\/-]+(\w+)*/i,
+            /lg[e;\s\/-]+(\w*)/i,
             /android.+lg(\-?[\d\w]+)\s+build/i
             ], [MODEL, [VENDOR, 'LG'], [TYPE, MOBILE]], [
 
@@ -11727,29 +11757,32 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /android.+;\s(glass)\s\d/i                                          // Google Glass
             ], [MODEL, [VENDOR, 'Google'], [TYPE, WEARABLE]], [
 
-            /android.+;\s(pixel c)\s/i                                          // Google Pixel C
+            /android.+;\s(pixel c)[\s)]/i                                       // Google Pixel C
             ], [MODEL, [VENDOR, 'Google'], [TYPE, TABLET]], [
 
-            /android.+;\s(pixel xl|pixel)\s/i                                   // Google Pixel
+            /android.+;\s(pixel( [23])?( xl)?)\s/i                              // Google Pixel
             ], [MODEL, [VENDOR, 'Google'], [TYPE, MOBILE]], [
 
-            /android.+(\w+)\s+build\/hm\1/i,                                    // Xiaomi Hongmi 'numeric' models
+            /android.+;\s(\w+)\s+build\/hm\1/i,                                 // Xiaomi Hongmi 'numeric' models
             /android.+(hm[\s\-_]*note?[\s_]*(?:\d\w)?)\s+build/i,               // Xiaomi Hongmi
-            /android.+(mi[\s\-_]*(?:one|one[\s_]plus|note lte)?[\s_]*(?:\d\w)?)\s+build/i,    // Xiaomi Mi
-            /android.+(redmi[\s\-_]*(?:note)?(?:[\s_]*[\w\s]+)?)\s+build/i      // Redmi Phones
+            /android.+(mi[\s\-_]*(?:one|one[\s_]plus|note lte)?[\s_]*(?:\d?\w?)[\s_]*(?:plus)?)\s+build/i,    // Xiaomi Mi
+            /android.+(redmi[\s\-_]*(?:note)?(?:[\s_]*[\w\s]+))\s+build/i       // Redmi Phones
             ], [[MODEL, /_/g, ' '], [VENDOR, 'Xiaomi'], [TYPE, MOBILE]], [
-            /android.+(mi[\s\-_]*(?:pad)?(?:[\s_]*[\w\s]+)?)\s+build/i          // Mi Pad tablets
+            /android.+(mi[\s\-_]*(?:pad)(?:[\s_]*[\w\s]+))\s+build/i            // Mi Pad tablets
             ],[[MODEL, /_/g, ' '], [VENDOR, 'Xiaomi'], [TYPE, TABLET]], [
             /android.+;\s(m[1-5]\snote)\sbuild/i                                // Meizu Tablet
             ], [MODEL, [VENDOR, 'Meizu'], [TYPE, TABLET]], [
+            /(mz)-([\w-]{2,})/i                                                 // Meizu Phone
+            ], [[VENDOR, 'Meizu'], MODEL, [TYPE, MOBILE]], [
 
-            /android.+a000(1)\s+build/i                                         // OnePlus
+            /android.+a000(1)\s+build/i,                                        // OnePlus
+            /android.+oneplus\s(a\d{4})\s+build/i
             ], [MODEL, [VENDOR, 'OnePlus'], [TYPE, MOBILE]], [
 
             /android.+[;\/]\s*(RCT[\d\w]+)\s+build/i                            // RCA Tablets
             ], [MODEL, [VENDOR, 'RCA'], [TYPE, TABLET]], [
 
-            /android.+[;\/]\s*(Venue[\d\s]*)\s+build/i                          // Dell Venue Tablets
+            /android.+[;\/\s]+(Venue[\d\s]{2,7})\s+build/i                      // Dell Venue Tablets
             ], [MODEL, [VENDOR, 'Dell'], [TYPE, TABLET]], [
 
             /android.+[;\/]\s*(Q[T|M][\d\w]+)\s+build/i                         // Verizon Tablet
@@ -11761,8 +11794,8 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /android.+[;\/]\s+(TM\d{3}.*\b)\s+build/i                           // Barnes & Noble Tablet
             ], [MODEL, [VENDOR, 'NuVision'], [TYPE, TABLET]], [
 
-            /android.+[;\/]\s*(zte)?.+(k\d{2})\s+build/i                        // ZTE K Series Tablet
-            ], [[VENDOR, 'ZTE'], MODEL, [TYPE, TABLET]], [
+            /android.+;\s(k88)\sbuild/i                                         // ZTE K Series Tablet
+            ], [MODEL, [VENDOR, 'ZTE'], [TYPE, TABLET]], [
 
             /android.+[;\/]\s*(gen\d{3})\s+build.*49h/i                         // Swiss GEN Mobile
             ], [MODEL, [VENDOR, 'Swiss'], [TYPE, MOBILE]], [
@@ -11773,26 +11806,29 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /android.+[;\/]\s*((Zeki)?TB.*\b)\s+build/i                         // Zeki Tablets
             ], [MODEL, [VENDOR, 'Zeki'], [TYPE, TABLET]], [
 
-            /(android).+[;\/]\s+([YR]\d{2}x?.*)\s+build/i,
-            /android.+[;\/]\s+(Dragon[\-\s]+Touch\s+|DT)(.+)\s+build/i          // Dragon Touch Tablet
+            /(android).+[;\/]\s+([YR]\d{2})\s+build/i,
+            /android.+[;\/]\s+(Dragon[\-\s]+Touch\s+|DT)(\w{5})\sbuild/i        // Dragon Touch Tablet
             ], [[VENDOR, 'Dragon Touch'], MODEL, [TYPE, TABLET]], [
 
-            /android.+[;\/]\s*(NS-?.+)\s+build/i                                // Insignia Tablets
+            /android.+[;\/]\s*(NS-?\w{0,9})\sbuild/i                            // Insignia Tablets
             ], [MODEL, [VENDOR, 'Insignia'], [TYPE, TABLET]], [
 
-            /android.+[;\/]\s*((NX|Next)-?.+)\s+build/i                         // NextBook Tablets
+            /android.+[;\/]\s*((NX|Next)-?\w{0,9})\s+build/i                    // NextBook Tablets
             ], [MODEL, [VENDOR, 'NextBook'], [TYPE, TABLET]], [
 
-            /android.+[;\/]\s*(Xtreme\_?)?(V(1[045]|2[015]|30|40|60|7[05]|90))\s+build/i
+            /android.+[;\/]\s*(Xtreme\_)?(V(1[045]|2[015]|30|40|60|7[05]|90))\s+build/i
             ], [[VENDOR, 'Voice'], MODEL, [TYPE, MOBILE]], [                    // Voice Xtreme Phones
 
-            /android.+[;\/]\s*(LVTEL\-?)?(V1[12])\s+build/i                     // LvTel Phones
+            /android.+[;\/]\s*(LVTEL\-)?(V1[12])\s+build/i                     // LvTel Phones
             ], [[VENDOR, 'LvTel'], MODEL, [TYPE, MOBILE]], [
+
+            /android.+;\s(PH-1)\s/i
+            ], [MODEL, [VENDOR, 'Essential'], [TYPE, MOBILE]], [                // Essential PH-1
 
             /android.+[;\/]\s*(V(100MD|700NA|7011|917G).*\b)\s+build/i          // Envizen Tablets
             ], [MODEL, [VENDOR, 'Envizen'], [TYPE, TABLET]], [
 
-            /android.+[;\/]\s*(Le[\s\-]+Pan)[\s\-]+(.*\b)\s+build/i             // Le Pan Tablets
+            /android.+[;\/]\s*(Le[\s\-]+Pan)[\s\-]+(\w{1,9})\s+build/i          // Le Pan Tablets
             ], [VENDOR, MODEL, [TYPE, TABLET]], [
 
             /android.+[;\/]\s*(Trio[\s\-]*.*)\s+build/i                         // MachSpeed Tablets
@@ -11807,14 +11843,14 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /android.+(KS(.+))\s+build/i                                        // Amazon Kindle Tablets
             ], [MODEL, [VENDOR, 'Amazon'], [TYPE, TABLET]], [
 
-            /android.+(Gigaset)[\s\-]+(Q.+)\s+build/i                           // Gigaset Tablets
+            /android.+(Gigaset)[\s\-]+(Q\w{1,9})\s+build/i                      // Gigaset Tablets
             ], [VENDOR, MODEL, [TYPE, TABLET]], [
 
             /\s(tablet|tab)[;\/]/i,                                             // Unidentifiable Tablet
             /\s(mobile)(?:[;\/]|\ssafari)/i                                     // Unidentifiable Mobile
             ], [[TYPE, util.lowerize], VENDOR, MODEL], [
 
-            /(android.+)[;\/].+build/i                                          // Generic Android Device
+            /(android[\w\.\s\-]{0,9});.+build/i                                 // Generic Android Device
             ], [MODEL, [VENDOR, 'Generic']]
 
 
@@ -11881,7 +11917,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(icab)[\/\s]([23]\.[\d\.]+)/i                                      // iCab
             ], [NAME, VERSION], [
 
-            /rv\:([\w\.]+).*(gecko)/i                                           // Gecko
+            /rv\:([\w\.]{1,9}).+(gecko)/i                                       // Gecko
             ], [VERSION, NAME]
         ],
 
@@ -11891,7 +11927,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /microsoft\s(windows)\s(vista|xp)/i                                 // Windows (iTunes)
             ], [NAME, VERSION], [
             /(windows)\snt\s6\.2;\s(arm)/i,                                     // Windows RT
-            /(windows\sphone(?:\sos)*)[\s\/]?([\d\.\s]+\w)*/i,                  // Windows Phone
+            /(windows\sphone(?:\sos)*)[\s\/]?([\d\.\s\w]*)/i,                   // Windows Phone
             /(windows\smobile|windows)[\s\/]?([ntce\d\.\s]+\w)/i
             ], [NAME, [VERSION, mapper.str, maps.os.windows.version]], [
             /(win(?=3|9|n)|win\s9x\s)([nt\d\.]+)/i
@@ -11900,13 +11936,13 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             // Mobile/Embedded OS
             /\((bb)(10);/i                                                      // BlackBerry 10
             ], [[NAME, 'BlackBerry'], VERSION], [
-            /(blackberry)\w*\/?([\w\.]+)*/i,                                    // Blackberry
+            /(blackberry)\w*\/?([\w\.]*)/i,                                     // Blackberry
             /(tizen)[\/\s]([\w\.]+)/i,                                          // Tizen
-            /(android|webos|palm\sos|qnx|bada|rim\stablet\sos|meego|contiki)[\/\s-]?([\w\.]+)*/i,
+            /(android|webos|palm\sos|qnx|bada|rim\stablet\sos|meego|contiki)[\/\s-]?([\w\.]*)/i,
                                                                                 // Android/WebOS/Palm/QNX/Bada/RIM/MeeGo/Contiki
             /linux;.+(sailfish);/i                                              // Sailfish OS
             ], [NAME, VERSION], [
-            /(symbian\s?os|symbos|s60(?=;))[\/\s-]?([\w\.]+)*/i                 // Symbian
+            /(symbian\s?os|symbos|s60(?=;))[\/\s-]?([\w\.]*)/i                  // Symbian
             ], [[NAME, 'Symbian'], VERSION], [
             /\((series40);/i                                                    // Series 40
             ], [NAME], [
@@ -11917,43 +11953,43 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
             /(nintendo|playstation)\s([wids34portablevu]+)/i,                   // Nintendo/Playstation
 
             // GNU/Linux based
-            /(mint)[\/\s\(]?(\w+)*/i,                                           // Mint
+            /(mint)[\/\s\(]?(\w*)/i,                                            // Mint
             /(mageia|vectorlinux)[;\s]/i,                                       // Mageia/VectorLinux
-            /(joli|[kxln]?ubuntu|debian|[open]*suse|gentoo|(?=\s)arch|slackware|fedora|mandriva|centos|pclinuxos|redhat|zenwalk|linpus)[\/\s-]?(?!chrom)([\w\.-]+)*/i,
+            /(joli|[kxln]?ubuntu|debian|suse|opensuse|gentoo|(?=\s)arch|slackware|fedora|mandriva|centos|pclinuxos|redhat|zenwalk|linpus)[\/\s-]?(?!chrom)([\w\.-]*)/i,
                                                                                 // Joli/Ubuntu/Debian/SUSE/Gentoo/Arch/Slackware
                                                                                 // Fedora/Mandriva/CentOS/PCLinuxOS/RedHat/Zenwalk/Linpus
-            /(hurd|linux)\s?([\w\.]+)*/i,                                       // Hurd/Linux
-            /(gnu)\s?([\w\.]+)*/i                                               // GNU
+            /(hurd|linux)\s?([\w\.]*)/i,                                        // Hurd/Linux
+            /(gnu)\s?([\w\.]*)/i                                                // GNU
             ], [NAME, VERSION], [
 
             /(cros)\s[\w]+\s([\w\.]+\w)/i                                       // Chromium OS
             ], [[NAME, 'Chromium OS'], VERSION],[
 
             // Solaris
-            /(sunos)\s?([\w\.]+\d)*/i                                           // Solaris
+            /(sunos)\s?([\w\.\d]*)/i                                            // Solaris
             ], [[NAME, 'Solaris'], VERSION], [
 
             // BSD based
-            /\s([frentopc-]{0,4}bsd|dragonfly)\s?([\w\.]+)*/i                   // FreeBSD/NetBSD/OpenBSD/PC-BSD/DragonFly
+            /\s([frentopc-]{0,4}bsd|dragonfly)\s?([\w\.]*)/i                    // FreeBSD/NetBSD/OpenBSD/PC-BSD/DragonFly
             ], [NAME, VERSION],[
 
-            /(haiku)\s(\w+)/i                                                  // Haiku
+            /(haiku)\s(\w+)/i                                                   // Haiku
             ], [NAME, VERSION],[
 
             /cfnetwork\/.+darwin/i,
-            /ip[honead]+(?:.*os\s([\w]+)\slike\smac|;\sopera)/i                 // iOS
+            /ip[honead]{2,4}(?:.*os\s([\w]+)\slike\smac|;\sopera)/i             // iOS
             ], [[VERSION, /_/g, '.'], [NAME, 'iOS']], [
 
-            /(mac\sos\sx)\s?([\w\s\.]+\w)*/i,
+            /(mac\sos\sx)\s?([\w\s\.]*)/i,
             /(macintosh|mac(?=_powerpc)\s)/i                                    // Mac OS
             ], [[NAME, 'Mac OS'], [VERSION, /_/g, '.']], [
 
             // Other
-            /((?:open)?solaris)[\/\s-]?([\w\.]+)*/i,                            // Solaris
-            /(aix)\s((\d)(?=\.|\)|\s)[\w\.]*)*/i,                               // AIX
-            /(plan\s9|minix|beos|os\/2|amigaos|morphos|risc\sos|openvms)/i,
-                                                                                // Plan9/Minix/BeOS/OS2/AmigaOS/MorphOS/RISCOS/OpenVMS
-            /(unix)\s?([\w\.]+)*/i                                              // UNIX
+            /((?:open)?solaris)[\/\s-]?([\w\.]*)/i,                             // Solaris
+            /(aix)\s((\d)(?=\.|\)|\s)[\w\.])*/i,                                // AIX
+            /(plan\s9|minix|beos|os\/2|amigaos|morphos|risc\sos|openvms|fuchsia)/i,
+                                                                                // Plan9/Minix/BeOS/OS2/AmigaOS/MorphOS/RISCOS/OpenVMS/Fuchsia
+            /(unix)\s?([\w\.]*)/i                                               // UNIX
             ], [NAME, VERSION]
         ]
     };
@@ -12138,7 +12174,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
     //   jQuery always exports to global scope, unless jQuery.noConflict(true) is used,
     //   and we should catch that.
     var $ = window && (window.jQuery || window.Zepto);
-    if (typeof $ !== UNDEF_TYPE) {
+    if (typeof $ !== UNDEF_TYPE && !$.ua) {
         var parser = new UAParser();
         $.ua = parser.getResult();
         $.ua.get = function () {
@@ -12891,9 +12927,9 @@ var ReactDOM = __webpack_require__(18);
 var Scroll = __webpack_require__(37);
 var Style = __webpack_require__(28);
 
-var getElementPosition = __webpack_require__(54);
+var getElementPosition = __webpack_require__(55);
 var getScrollPosition = __webpack_require__(29);
-var getViewportDimensions = __webpack_require__(55);
+var getViewportDimensions = __webpack_require__(56);
 var invariant = __webpack_require__(1);
 
 var SCROLL_BUFFER = 10;
@@ -13210,7 +13246,7 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
 var DraftEditorDecoratedLeaves = __webpack_require__(102);
-var DraftEditorLeaf = __webpack_require__(51);
+var DraftEditorLeaf = __webpack_require__(52);
 var DraftOffsetKey = __webpack_require__(15);
 var Immutable = __webpack_require__(0);
 var React = __webpack_require__(9);
@@ -13531,10 +13567,10 @@ module.exports = DraftEditorTextNode;
 
 
 
-var DraftJsDebugLogging = __webpack_require__(52);
+var DraftJsDebugLogging = __webpack_require__(53);
 
 var containsNode = __webpack_require__(36);
-var getActiveElement = __webpack_require__(53);
+var getActiveElement = __webpack_require__(54);
 var invariant = __webpack_require__(1);
 
 function getAnonymizedDOM(node, getNodeLabels) {
@@ -14109,7 +14145,7 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
-var DraftEditorBlock = __webpack_require__(56);
+var DraftEditorBlock = __webpack_require__(57);
 var DraftOffsetKey = __webpack_require__(15);
 var EditorState = __webpack_require__(2);
 var React = __webpack_require__(9);
@@ -14421,14 +14457,14 @@ module.exports = joinClasses;
 
 
 
-var DataTransfer = __webpack_require__(57);
+var DataTransfer = __webpack_require__(58);
 var DraftModifier = __webpack_require__(5);
 var EditorState = __webpack_require__(2);
 
 var findAncestorOffsetKey = __webpack_require__(35);
-var getTextContentFromFiles = __webpack_require__(58);
-var getUpdatedSelectionState = __webpack_require__(59);
-var isEventHandled = __webpack_require__(22);
+var getTextContentFromFiles = __webpack_require__(59);
+var getUpdatedSelectionState = __webpack_require__(60);
+var isEventHandled = __webpack_require__(23);
 var nullthrows = __webpack_require__(8);
 
 /**
@@ -14713,7 +14749,7 @@ var onCut = __webpack_require__(128);
 var onDragOver = __webpack_require__(129);
 var onDragStart = __webpack_require__(130);
 var onFocus = __webpack_require__(131);
-var onInput = __webpack_require__(49);
+var onInput = __webpack_require__(50);
 var onKeyDown = __webpack_require__(132);
 var onPaste = __webpack_require__(146);
 var onSelect = __webpack_require__(154);
@@ -14754,15 +14790,15 @@ module.exports = DraftEditorEditHandler;
 
 
 
-var BlockTree = __webpack_require__(45);
+var BlockTree = __webpack_require__(46);
 var DraftModifier = __webpack_require__(5);
 var EditorState = __webpack_require__(2);
 var UserAgent = __webpack_require__(11);
 
 var getEntityKeyForSelection = __webpack_require__(34);
 var gkx = __webpack_require__(7);
-var isEventHandled = __webpack_require__(22);
-var isSelectionAtLeafStart = __webpack_require__(48);
+var isEventHandled = __webpack_require__(23);
+var isSelectionAtLeafStart = __webpack_require__(49);
 var nullthrows = __webpack_require__(8);
 var setImmediate = __webpack_require__(120);
 
@@ -15395,7 +15431,7 @@ process.umask = function() { return 0; };
 var EditorState = __webpack_require__(2);
 
 var containsNode = __webpack_require__(36);
-var getActiveElement = __webpack_require__(53);
+var getActiveElement = __webpack_require__(54);
 
 function editOnBlur(editor, e) {
   // In a contentEditable element, when you select a range and then click
@@ -15481,8 +15517,8 @@ module.exports = editOnCompositionStart;
 
 
 
-var ContentState = __webpack_require__(25);
-var convertFromDraftStateToRaw = __webpack_require__(60);
+var ContentState = __webpack_require__(21);
+var convertFromDraftStateToRaw = __webpack_require__(38);
 var getFragmentFromSelection = __webpack_require__(62);
 
 /**
@@ -15667,6 +15703,9 @@ module.exports = encodeInlineStyleRanges;
 
 
 
+var ContentState = __webpack_require__(21);
+var convertFromDraftStateToRaw = __webpack_require__(38);
+
 var DraftModifier = __webpack_require__(5);
 var EditorState = __webpack_require__(2);
 var Style = __webpack_require__(28);
@@ -15713,6 +15752,25 @@ function editOnCut(editor, e) {
     editor.exitCurrentMode();
     editor.update(removeFragment(editorState));
   }, 0);
+  console.log(e.clipboardData, fragment);
+  if (e.clipboardData && fragment) {
+    var content = ContentState.createFromBlockArray(fragment.toArray());
+    var serialisedContent = JSON.stringify(convertFromDraftStateToRaw(content));
+
+    var fragmentElt = document.createElement('div');
+    var domSelection = window.getSelection();
+    fragmentElt.appendChild(domSelection.getRangeAt(0).cloneContents());
+    fragmentElt.setAttribute('data-editor-content', serialisedContent);
+    // We set the style property to replicate the browser's behavior of inline
+    // styles in rich text copy-paste. This is important for line breaks to be
+    // interpreted correctly when pasted into another word processor.
+    fragmentElt.setAttribute('style', 'white-space: pre-wrap;');
+
+    e.clipboardData.setData('text/plain', domSelection.toString());
+    e.clipboardData.setData('text/html', fragmentElt.outerHTML);
+
+    e.preventDefault();
+  }
 }
 
 function removeFragment(editorState) {
@@ -15853,12 +15911,12 @@ module.exports = editOnFocus;
 
 var DraftModifier = __webpack_require__(5);
 var EditorState = __webpack_require__(2);
-var KeyBindingUtil = __webpack_require__(38);
+var KeyBindingUtil = __webpack_require__(39);
 var Keys = __webpack_require__(33);
 var SecondaryClipboard = __webpack_require__(133);
 var UserAgent = __webpack_require__(11);
 
-var isEventHandled = __webpack_require__(22);
+var isEventHandled = __webpack_require__(23);
 var keyCommandBackspaceToStartOfLine = __webpack_require__(134);
 var keyCommandBackspaceWord = __webpack_require__(136);
 var keyCommandDeleteWord = __webpack_require__(138);
@@ -16033,7 +16091,7 @@ module.exports = editOnKeyDown;
 var DraftModifier = __webpack_require__(5);
 var EditorState = __webpack_require__(2);
 
-var getContentStateFragment = __webpack_require__(24);
+var getContentStateFragment = __webpack_require__(25);
 var nullthrows = __webpack_require__(8);
 
 var clipboard = null;
@@ -16109,8 +16167,8 @@ var EditorState = __webpack_require__(2);
 
 var expandRangeToStartOfLine = __webpack_require__(135);
 var getDraftEditorSelectionWithNodes = __webpack_require__(64);
-var moveSelectionBackward = __webpack_require__(39);
-var removeTextWithStrategy = __webpack_require__(23);
+var moveSelectionBackward = __webpack_require__(40);
+var removeTextWithStrategy = __webpack_require__(24);
 
 function keyCommandBackspaceToStartOfLine(editorState) {
   var afterRemoval = removeTextWithStrategy(editorState, function (strategyState) {
@@ -16356,8 +16414,8 @@ module.exports = expandRangeToStartOfLine;
 var DraftRemovableWord = __webpack_require__(65);
 var EditorState = __webpack_require__(2);
 
-var moveSelectionBackward = __webpack_require__(39);
-var removeTextWithStrategy = __webpack_require__(23);
+var moveSelectionBackward = __webpack_require__(40);
+var removeTextWithStrategy = __webpack_require__(24);
 
 /**
  * Delete the word that is left of the cursor, as well as any spaces or
@@ -16451,7 +16509,7 @@ var DraftRemovableWord = __webpack_require__(65);
 var EditorState = __webpack_require__(2);
 
 var moveSelectionForward = __webpack_require__(66);
-var removeTextWithStrategy = __webpack_require__(23);
+var removeTextWithStrategy = __webpack_require__(24);
 
 /**
  * Delete the word that is right of the cursor, as well as any spaces or
@@ -16616,8 +16674,8 @@ module.exports = keyCommandMoveSelectionToStartOfBlock;
 var EditorState = __webpack_require__(2);
 var UnicodeUtils = __webpack_require__(16);
 
-var moveSelectionBackward = __webpack_require__(39);
-var removeTextWithStrategy = __webpack_require__(23);
+var moveSelectionBackward = __webpack_require__(40);
+var removeTextWithStrategy = __webpack_require__(24);
 
 /**
  * Remove the selected range. If the cursor is collapsed, remove the preceding
@@ -16667,7 +16725,7 @@ var EditorState = __webpack_require__(2);
 var UnicodeUtils = __webpack_require__(16);
 
 var moveSelectionForward = __webpack_require__(66);
-var removeTextWithStrategy = __webpack_require__(23);
+var removeTextWithStrategy = __webpack_require__(24);
 
 /**
  * Remove the selected range. If the cursor is collapsed, remove the following
@@ -16717,7 +16775,7 @@ module.exports = keyCommandPlainDelete;
 var DraftModifier = __webpack_require__(5);
 var EditorState = __webpack_require__(2);
 
-var getContentStateFragment = __webpack_require__(24);
+var getContentStateFragment = __webpack_require__(25);
 
 /**
  * Transpose the characters on either side of a collapsed cursor, or
@@ -16854,15 +16912,15 @@ module.exports = keyCommandUndo;
 
 var BlockMapBuilder = __webpack_require__(19);
 var CharacterMetadata = __webpack_require__(4);
-var DataTransfer = __webpack_require__(57);
+var DataTransfer = __webpack_require__(58);
 var DraftModifier = __webpack_require__(5);
 var DraftPasteProcessor = __webpack_require__(147);
 var EditorState = __webpack_require__(2);
 var RichTextEditorUtil = __webpack_require__(71);
 
 var getEntityKeyForSelection = __webpack_require__(34);
-var getTextContentFromFiles = __webpack_require__(58);
-var isEventHandled = __webpack_require__(22);
+var getTextContentFromFiles = __webpack_require__(59);
+var isEventHandled = __webpack_require__(23);
 var splitTextIntoTextBlocks = __webpack_require__(153);
 
 /**
@@ -17035,7 +17093,7 @@ var convertFromHTMLtoContentBlocksClassic = __webpack_require__(67);
 var convertFromHTMLtoContentBlocksNew = __webpack_require__(69);
 var convertFromRawToDraftState = __webpack_require__(70);
 var generateRandomKey = __webpack_require__(10);
-var getSafeBodyFromHTML = __webpack_require__(40);
+var getSafeBodyFromHTML = __webpack_require__(41);
 var gkx = __webpack_require__(7);
 var sanitizeDraftText = __webpack_require__(31);
 
@@ -17475,7 +17533,7 @@ module.exports = splitTextIntoTextBlocks;
 
 
 
-var DraftJsDebugLogging = __webpack_require__(52);
+var DraftJsDebugLogging = __webpack_require__(53);
 var EditorState = __webpack_require__(2);
 var ReactDOM = __webpack_require__(18);
 
