@@ -15559,7 +15559,7 @@ function editOnCopy(editor, e) {
     Array.from(
     // contenteditable=false does nothing special here,
     // it's just whatever elements we want to remove have it set to false
-    el.querySelectorAll(['contenteditable=false'])).forEach(function (e) {
+    el.querySelectorAll('[contenteditable=false]')).forEach(function (e) {
       return e.remove();
     });
     e.clipboardData.setData('text/html', el.outerHTML);
@@ -15777,7 +15777,7 @@ function editOnCut(editor, e) {
     Array.from(
     // contenteditable=false does nothing special here,
     // it's just whatever elements we want to remove have it set to false
-    el.querySelectorAll(['contenteditable=false'])).forEach(function (e) {
+    el.querySelectorAll('[contenteditable=false]')).forEach(function (e) {
       return e.remove();
     });
     e.clipboardData.setData('text/html', el.outerHTML);
