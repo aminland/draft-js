@@ -15752,7 +15752,6 @@ function editOnCut(editor, e) {
     editor.exitCurrentMode();
     editor.update(removeFragment(editorState));
   }, 0);
-  console.log(e.clipboardData, fragment);
   if (e.clipboardData && fragment) {
     var content = ContentState.createFromBlockArray(fragment.toArray());
     var serialisedContent = JSON.stringify(convertFromDraftStateToRaw(content));
