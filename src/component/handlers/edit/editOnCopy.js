@@ -64,6 +64,72 @@ function editOnCopy(editor: DraftEditor, e: SyntheticClipboardEvent<>): void {
     .forEach(e => e.remove())
     e.clipboardData.setData('text/html', el.outerHTML);
 
+    const fragmentKeys = fragment.keySeq().toJS()
+    const startKey = selection.getStartKey()
+    const endKey = selection.getEndKey()
+    const selectedBlockKeys = editorState.getCurrentContent().getBlockMap().keySeq().skipUntil(item => item === startKey).takeUntil(item => item === endKey).concat([endKey]).toJS()
+      var keyMap= selectedBlockKeys.reduce((acc, item, index) => {
+          return {...acc, [fragmentKeys[index]]: item}
+      }, {})
+    const blockKeyToElementMap = fragment.keySeq().toJS().reduce((acc, item) => {
+        const selector = `[data-block="true"][data-offset-key="${keyMap[item]}1-0"]`
+        const element = el.querySelector(selector) || document.createElement('div');
+        return {...acc, [item]: element}
+    }, {})
+    const outputElement = document.createElement('div');
+    outputElement.setAttribute('data-editor-content', serialisedContent);
+    fragmentElt.setAttribute('style', 'white-space: pre-wrap;');
+
+    const getHasChild = (contentState, block) => {
+      const blockAfter = contentState.getBlockAfter(block.getKey())
+      if (!blockAfter) {
+        return false
+      }
+      return blockAfter.getIn(['data', 'indent'], 0) > block.getIn(['data', 'indent'], 0)
+    }
+    const getIsLastChild = (contentState, block) => {
+      const blockAfter = contentState.getBlockAfter(block.getKey())
+      if (!blockAfter) {
+        return false
+      }
+      return blockAfter.getIn(['data', 'indent'], 0) < block.getIn(['data', 'indent'], 0)
+    }
+    const inner = content.getBlocksAsArray().reduce((acc, item) => {
+      const hasChild = getHasChild(content, item);
+      const isLastChild = getIsLastChild(content, item);
+      const indent = item.getIn(['data', 'indent'], 0);
+      let { lastIndentation, html } = acc;
+      const itemElement = blockKeyToElementMap[item.getKey()];
+      if (["todo", "agenda"].includes(item.getType())) {
+        const checkbox = document.createElement("input")
+        checkbox.setAttribute("type", "checkbox")
+        if (item.getIn(['data', 'done'])) {
+          checkbox.setAttribute('checked', '')
+        }
+        itemElement.prepend(checkbox)
+      }
+      let currentItemHtml = itemElement.outerHTML
+
+      if (indent) {
+       currentItemHtml = `<li>${currentItemHtml}</li>`
+      }
+
+      let sunkDepth;
+      if ((sunkDepth = (indent - lastIndentation)) > 0) {
+        currentItemHtml = '<ul>'.repeat(sunkDepth) + currentItemHtml
+      }
+
+      if (sunkDepth < 0) {
+        currentItemHtml =  '</ul>'.repeat(-sunkDepth) + currentItemHtml
+      }
+
+      return {
+        lastIndentation: indent,
+        html: html + currentItemHtml,
+      }
+    }, {lastIndentation: 0, html: ''})
+    outputElement.innerHTML = inner.html;
+    e.clipboardData.setData('text/html', outputElement.outerHTML);
     e.preventDefault();
   }
 }
