@@ -15583,7 +15583,11 @@ function editOnCopy(editor, e) {
     }, {});
     var blockKeyToElementMap = fragment.keySeq().toJS().reduce(function (acc, item) {
       var selector = '[data-block="true"][data-offset-key="' + keyMap[item] + '-0-0"]';
-      var element = el.querySelector(selector) || document.createElement('div');
+      var element = el.querySelector(selector);
+      if (!element) {
+        element = document.createElement('div');
+        element.innerHTML = fragment.getIn([item, 'text'], '');
+      }
       return _extends({}, acc, _defineProperty({}, item, element));
     }, {});
     var outputElement = document.createElement('div');
